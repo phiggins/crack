@@ -66,4 +66,12 @@ class JsonTest < Test::Unit::TestCase
     }.should_not raise_error(Crack::ParseError)
   end
 
+  should "should be able to parse json file from HTTParty's fixtures" do
+    data = File.open(File.dirname(__FILE__) + "/data/twitter.json", "r").read
+
+    lambda {
+      Crack::JSON.parse(data)
+    }.should_not raise_error(Crack::ParseError)
+  end
+
 end

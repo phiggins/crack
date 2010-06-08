@@ -9,16 +9,12 @@ require 'strscan'
 module Crack
   class JSON
     def self.parse(json)
-      YAML.load(unescape(convert_json_to_yaml(json)))
+      YAML.load(convert_json_to_yaml(json))
     rescue ArgumentError => e
       raise ParseError, "Invalid JSON string"
     end
 
     protected
-      def self.unescape(str)
-        str.gsub(/\\u([0-9a-f]{4})/) { [$1.hex].pack("U") }
-      end
-      
       # matches YAML-formatted dates
       DATE_REGEX = /^\d{4}-\d{2}-\d{2}$|^\d{4}-\d{1,2}-\d{1,2}[T \t]+\d{1,2}:\d{2}:\d{2}(\.[0-9]*)?(([ \t]*)Z|[-+]\d{2}?(:\d{2})?)?$/
 
@@ -33,11 +29,9 @@ module Crack
               pos = scanner.pos
             elsif quoting == char
               if json[pos..scanner.pos-2] =~ DATE_REGEX
-                # found a date, track the exact positions of the quotes so we can remove them later.
-                # oh, and increment them for each current mark, each one is an extra padded space that bumps
-                # the position in the final YAML output
-                total_marks = marks.size
-                times << pos+total_marks << scanner.pos+total_marks
+                # found a date, track the exact positions of the quotes so we can
+                # overwrite them with spaces later.
+                times << pos << scanner.pos
               end
               quoting = false
             end
@@ -45,21 +39,45 @@ module Crack
             marks << scanner.pos - 1 unless quoting
           when "\\"
             scanner.skip(/\\/)
-          end          
+          end
         end
 
         if marks.empty?
-          json.gsub(/\\\//, '/')
+          json.gsub(/\\([\\\/]|u[[:xdigit:]]{4})/) do
+            ustr = $1
+            if ustr.start_with?('u')
+              [ustr[1..-1].to_i(16)].pack("U")
+            elsif ustr == '\\'
+              '\\\\'
+            else
+              ustr
+            end
+          end
         else
           left_pos  = [-1].push(*marks)
-          right_pos = marks << json.length
+          right_pos = marks << scanner.pos + scanner.rest_size
           output    = []
           left_pos.each_with_index do |left, i|
-            output << json[left.succ..right_pos[i]]
+            scanner.pos = left.succ
+            chunk = scanner.peek(right_pos[i] - scanner.pos + 1)
+            # overwrite the quotes found around the dates with spaces
+            while times.size > 0 && times[0] <= right_pos[i]
+              chunk[times.shift - scanner.pos - 1] = ' '
+            end
+            chunk.gsub!(/\\([\\\/]|u[[:xdigit:]]{4})/) do
+              ustr = $1
+              if ustr.start_with?('u')
+                [ustr[1..-1].to_i(16)].pack("U")
+              elsif ustr == '\\'
+                '\\\\'
+              else
+                ustr
+              end
+            end
+            output << chunk
           end
           output = output * " "
 
-          times.each { |i| output[i-1] = ' ' }
           output.gsub!(/\\\//, '/')
           output
         end
