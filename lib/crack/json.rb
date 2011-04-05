@@ -9,12 +9,24 @@ require 'strscan'
 module Crack
   class JSON
     def self.parse(json)
-      YAML.load(unescape(convert_json_to_yaml(json)))
+      YAML.load(unescape(encode(convert_json_to_yaml(json))))
     rescue ArgumentError => e
       raise ParseError, "Invalid JSON string"
     end
 
     protected
+      def self.encode(str)
+        begin
+          if str.encoding.to_s.downcase.match(/ascii-8bit/)
+            # same as 'binary' (meaning 'raw bytes') so force to utf-8
+            str.force_encoding('utf-8')
+          end
+        rescue
+
+        end
+        str
+      end
+
       def self.unescape(str)
         str.gsub(/\\u([0-9a-f]{4})/) { [$1.hex].pack("U") }
       end
